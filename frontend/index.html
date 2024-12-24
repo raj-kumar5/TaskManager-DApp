@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Task Manager DApp</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f7f6;
+        margin: 0;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: auto;
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        font-weight: bold;
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .form-group input,
+      .form-group button {
+        width: 100%;
+        padding: 8px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+      }
+
+      .form-group button {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+
+      .form-group button:hover {
+        background-color: #45a049;
+      }
+
+      .task-list {
+        margin-top: 30px;
+      }
+
+      .task-item {
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .task-item.completed {
+        background-color: #d3ffd3;
+      }
+
+      .task-item button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+
+      .task-item button:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Task Manager</h1>
+
+      <!-- Create Task Form -->
+      <div class="form-group">
+        <label for="taskDescription">Task Description</label>
+        <input
+          type="text"
+          id="taskDescription"
+          placeholder="Enter task description"
+        />
+
+        <label for="assigneeAddress">Assignee Address</label>
+        <input
+          type="text"
+          id="assigneeAddress"
+          placeholder="Enter team member address"
+        />
+
+        <button id="createTaskButton">Create Task</button>
+      </div>
+
+      <!-- Task List -->
+      <div class="task-list" id="taskList">
+        <h3>Task List</h3>
+        <ul id="tasks">
+          <!-- Task items will appear here -->
+        </ul>
+      </div>
+    </div>
+
+    <!-- Web3.js Script -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.6.1/web3.min.js"></script>
+    <script>
+      let web3;
+      let taskManagerContract;
+      let userAccount;
+
+      const contractAddress = "0x7AE4a8239C4838c11A5085C63757b7D817d2bf88";
+      const contractABI = [
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "taskId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "address",
+              name: "assignee",
+              type: "address",
+            },
+          ],
+          name: "TaskCompleted",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "taskId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "string",
+              name: "description",
+              type: "string",
+            },
+            {
+              indexed: false,
+              internalType: "address",
+              name: "assignee",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "createdAt",
+              type: "uint256",
+            },
+          ],
+          name: "TaskCreated",
+          type: "event",
+        },
+        {
+          inputs: [
+            {
+              internalType: "string",
+              name: "description",
+              type: "string",
+            },
+            {
+              internalType: "address",
+              name: "assignee",
+              type: "address",
+            },
+          ],
+          name: "createTask",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "taskId",
+              type: "uint256",
+            },
+          ],
+          name: "markTaskCompleted",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "taskIdCounter",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "tasks",
+          outputs: [
+            {
+              internalType: "string",
+              name: "description",
+              type: "string",
+            },
+            {
+              internalType: "address",
+              name: "assignee",
+              type: "address",
+            },
+            {
+              internalType: "bool",
+              name: "completed",
+              type: "bool",
+            },
+            {
+              internalType: "uint256",
+              name: "createdAt",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+      ];
+
+      window.onload = async function () {
+        // Check if MetaMask is available
+        if (typeof window.ethereum !== "undefined") {
+          web3 = new Web3(window.ethereum);
+          try {
+            await window.ethereum.enable(); // Request user account access
+            userAccount = (await web3.eth.getAccounts())[0];
+            taskManagerContract = new web3.eth.Contract(
+              contractABI,
+              contractAddress
+            );
+            loadTasks();
+          } catch (error) {
+            alert("User denied account access!");
+          }
+        } else {
+          alert("Please install MetaMask!");
+        }
+      };
+
+      // Function to create a new task
+      document
+        .getElementById("createTaskButton")
+        .addEventListener("click", async function () {
+          const description = document.getElementById("taskDescription").value;
+          const assigneeAddress =
+            document.getElementById("assigneeAddress").value;
+
+          if (!description || !assigneeAddress) {
+            alert("Please fill in both fields");
+            return;
+          }
+
+          try {
+            await taskManagerContract.methods
+              .createTask(description, assigneeAddress)
+              .send({ from: userAccount });
+            alert("Task created successfully!");
+            loadTasks();
+          } catch (error) {
+            console.error("Error creating task:", error);
+            alert("Error creating task");
+          }
+        });
+
+      // Function to load tasks from the blockchain
+      async function loadTasks() {
+        const taskListElement = document.getElementById("tasks");
+        taskListElement.innerHTML = ""; // Clear existing tasks
+
+        const taskCount = await taskManagerContract.methods
+          .taskIdCounter()
+          .call();
+
+        for (let i = 1; i <= taskCount; i++) {
+          const task = await taskManagerContract.methods.tasks(i).call();
+          const taskElement = document.createElement("li");
+          taskElement.className = "task-item";
+          if (task.completed) {
+            taskElement.classList.add("completed");
+          }
+
+          taskElement.innerHTML = `
+                <div>
+                    <strong>Description:</strong> ${task.description} <br>
+                    <strong>Assignee:</strong> ${task.assignee} <br>
+                    <strong>Status:</strong> ${
+                      task.completed ? "Completed" : "Pending"
+                    }
+                </div>
+                <button onclick="markTaskCompleted(${i})">Mark as Completed</button>
+            `;
+
+          taskListElement.appendChild(taskElement);
+        }
+      }
+
+      // Function to mark a task as completed
+      async function markTaskCompleted(taskId) {
+        try {
+          await taskManagerContract.methods
+            .markTaskCompleted(taskId)
+            .send({ from: userAccount });
+          alert("Task marked as completed!");
+          loadTasks();
+        } catch (error) {
+          console.error("Error marking task as completed:", error);
+          alert("Error completing task");
+        }
+      }
+    </script>
+  </body>
+</html>
